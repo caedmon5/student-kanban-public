@@ -1,0 +1,60 @@
+name: Update Kanban Board
+
+on:
+  workflow_dispatch:  # Allows manual runs from the GitHub UI
+  repository_dispatch:
+    types: [card-moved]  # Trigger via webhook when a project card is moved
+  schedule:
+    # Every 3 hours on weekdays
+    - cron: '0 */3 * * 1-5'
+
+jobs:
+  update-kanban:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    permissions:
+      contents: write
+      issues: write
+      repository-projects: write
+
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔐 Restore students.csv from secret (fail fast if missing)
+        run: |
+          if [ -z "${STUDENTS_CSV}" ]; then
+            echo "❌ STUDENTS_CSV secret is not set."
+            exit 1
+          fi
+          # Write exactly what’s in the secret; avoid printing it.
+          printf '%s' "$STUDENTS_CSV" > students.csv
+          # Minimal sanity check without leaking contents
+          lines=$(wc -l < students.csv || true)
+          if [ -z "$lines" ] || [ "$lines" -lt 2 ]; then
+            echo "❌ students.csv appears empty or missing header/content."
+            exit 1
+          fi
+        env:
+          STUDENTS_CSV: ${{ secrets.STUDENTS_CSV }}
+      
+
+      - name: 🧠 Run script to pull issues into project
+        env:
+          OWNER_LOGIN: ${{ vars.OWNER_LOGIN }}   # Set in repo Settings > Variables
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}  # Set in repo Settings > Variables
+          ADDITIONAL_REPOS: ${{ vars.ADDITIONAL_REPOS }}  # Comma-separated, e.g. "reading-inbox"
+        run: python pull_issues_to_kanban.py

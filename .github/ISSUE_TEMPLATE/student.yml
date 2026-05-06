@@ -1,0 +1,71 @@
+name: Student Card
+description: Create or update a student tracking card
+title: "[Student] ${name} (${programme})"
+labels: ["student"]
+projects:
+  - "YOUR_USERNAME/YOUR_PROJECT_NUMBER"  # CONFIGURE: replace with your-username/project-number
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Student Name
+      placeholder: "e.g., Shara Merrill"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: programme
+    attributes:
+      label: Programme
+      options:
+        - MA
+        - PhD
+    validations:
+      required: true
+
+  - type: input
+    id: start_date
+    attributes:
+      label: Start Date (YYYY-MM-DD)
+      placeholder: "2024-09-01"
+
+  - type: textarea
+    id: committee
+    attributes:
+      label: Committee
+      description: "One per line, e.g., Supervisor: Daniel O'Donnell"
+      placeholder: |
+        Supervisor: ...
+        Member: ...
+        Member: ...
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Current Status
+      options:
+        - Preliminary
+        - Coursework
+        - Prospectus
+        - Comprehensives
+        - Thesis Work
+        - Defence
+        - Revisions
+        - Withdrawn
+        - Complete
+    validations:
+      required: true
+
+  # --- Committee meetings / progress reporting ---
+  - type: input
+    id: next_committee_meeting
+    attributes:
+      label: Next Committee Meeting (YYYY-MM-DD)
+      description: "Due date for the next mandated committee meeting/progress report"
+      placeholder: "2026-02-01"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      placeholder: "Anything useful for quick triage"
