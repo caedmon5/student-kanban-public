@@ -1,0 +1,95 @@
+name: Update Kanban Board
+
+on:
+  workflow_dispatch:  # Allows manual runs from the GitHub UI
+  repository_dispatch:
+    types: [card-moved]  # Trigger via webhook when a project card is moved
+  schedule:
+    # Every 3 hours on weekdays
+    - cron: '0 */3 * * 1-5'
+
+jobs:
+  update-kanban:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    permissions:
+      contents: write
+      issues: write
+      repository-projects: write
+
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔐 Restore students.csv from secret (fail fast if missing)
+        run: |
+          if [ -z "${STUDENTS_CSV}" ]; then
+            echo "❌ STUDENTS_CSV secret is not set."
+            exit 1
+          fi
+          # Write exactly what’s in the secret; avoid printing it.
+          printf '%s' "$STUDENTS_CSV" > students.csv
+          # Minimal sanity check without leaking contents
+          lines=$(wc -l < students.csv || true)
+          if [ -z "$lines" ] || [ "$lines" -lt 2 ]; then
+            echo "❌ students.csv appears empty or missing header/content."
+            exit 1
+          fi
+        env:
+          STUDENTS_CSV: ${{ secrets.STUDENTS_CSV }}
+      
+
+      - name: 🧠 Run script to pull issues into project
+        env:
+          OWNER_LOGIN: ${{ vars.OWNER_LOGIN }}   # Set in repo Settings > Variables
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}  # Set in repo Settings > Variables
+          ADDITIONAL_REPOS: ${{ vars.ADDITIONAL_REPOS }}  # Comma-separated, e.g. "reading-inbox"
+        run: python pull_issues_to_kanban.py
+
+      # --- Non-silent-failure alerting ---
+      # Deliberately uses the built-in GITHUB_TOKEN, not GH_TOKEN: the most common
+      # failure is an expired GH_TOKEN PAT, and a step authenticating with that same
+      # dead token could not report its own failure. The built-in token is always
+      # valid and can write issues in this repo (permissions: issues: write, above).
+      - name: 🚨 Open/append failure tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="⚠️ Kanban sync failing"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          BODY=$(printf 'The **Update Kanban Board** workflow failed on %s.\n\nFailed run: %s\n\nThe student reading-queue board is not being updated until this is resolved. Most common cause: an expired `GH_TOKEN` PAT — refresh it with `gh secret set GH_TOKEN --repo %s`.' \
+            "$(date -u '+%Y-%m-%d %H:%M UTC')" "$RUN_URL" "$GITHUB_REPOSITORY")
+          NUM=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,title --jq "map(select(.title==\"$TITLE\")) | .[0].number // empty")
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: ✅ Close failure tracking issue on success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="⚠️ Kanban sync failing"
+          NUM=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,title --jq "map(select(.title==\"$TITLE\")) | .[0].number // empty")
+          if [ -n "$NUM" ]; then
+            gh issue close "$NUM" --repo "$GITHUB_REPOSITORY" \
+              --comment "✅ Sync succeeded on $(date -u '+%Y-%m-%d %H:%M UTC') — closing."
+          fi

@@ -1,0 +1,71 @@
+name: Export safe subset to public mirror
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-public
+  cancel-in-progress: true
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Check out private repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Build an "export" directory containing ONLY safe files.
+      - name: Build export tree (allowlist)
+        run: |
+          set -euo pipefail
+          rm -rf export
+          mkdir -p export
+
+          # Copy only the safe/public artefacts you want to publish
+          rsync -av --delete \
+            --include '.github/' \
+            --include '.github/***' \
+            --include 'template/' \
+            --include 'template/***' \
+            --include '*.py' \
+            --include '*.md' \
+            --include 'requirements.txt' \
+            --exclude '*' \
+            ./ export/
+
+          # Hard safety net: fail if sensitive files somehow made it in
+          test ! -e export/students.csv
+          test ! -e export/.env
+
+          # Optional: stamp mirror metadata
+          printf "Mirror built from private repo commit %s\n" "${GITHUB_SHA}" > export/MIRROR_SOURCE.txt
+
+      - name: Push export tree to public repo
+        env:
+          PUBLIC_REPO: ${{ vars.OWNER_LOGIN }}/student-kanban-public
+          # Create a classic PAT with "repo" scope (or fine-grained with contents:write on the public repo),
+          # store it in the private repo secrets as PUBLIC_MIRROR_TOKEN
+          TOKEN: ${{ secrets.PUBLIC_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd export
+
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "Export from private ${GITHUB_SHA}"
+
+          git branch -M main
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${PUBLIC_REPO}.git"
+          git push -f origin main

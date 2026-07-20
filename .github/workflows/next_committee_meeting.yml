@@ -1,0 +1,38 @@
+name: Compute Next Committee Meeting
+
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch: {}
+
+env:
+  PROJECT_TITLE: "Graduate Student Progress"
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      issues: write           # post comments when needed
+      contents: read
+      pull-requests: read
+      # GITHUB_TOKEN can read/write Projects (v2) in the same owner scope
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install requests pyyaml
+      - name: Compute & update next meeting
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          PROJECT_TITLE: Graduate Progress
+          NEXT_FIELD_NAME: Next Committee Meeting
+          START_FIELD_NAME: Start Date
+          PROGRAMME_FIELD_NAME: Programme
+        run: python scripts/update_next_meeting.py

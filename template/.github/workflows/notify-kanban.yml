@@ -1,0 +1,18 @@
+name: Notify Kanban Board
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger kanban sync
+        run: |
+          gh api \
+            --method POST \
+            /repos/${{ vars.KANBAN_REPO }}/dispatches \
+            -f event_type=card-moved
+        env:
+          GH_TOKEN: ${{ secrets.KANBAN_TOKEN }}
